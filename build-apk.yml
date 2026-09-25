@@ -27,7 +27,7 @@ jobs:
           cache: true
 
       - name: Instalar dependencias del proyecto
-        run: flutter pub get
+        run: flutter pub get --no-example
 
       - name: Compilar APK en modo Debug
         run: flutter build apk --debug
