@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:async'; // Necesario para el Timer
+import 'dart:async';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
@@ -245,14 +247,15 @@ class ChannelsScreen extends StatefulWidget {
 
 class _ChannelsScreenState extends State<ChannelsScreen> {
   List<dynamic> _channels = [];
+  List<dynamic> _filteredChannels = [];
   bool _isLoadingChannels = true;
   dynamic _selectedChannel;
+  final TextEditingController _searchController = TextEditingController();
 
   late final Player _player;
   late final VideoController _videoController;
   bool _isFullScreen = false;
 
-  // NUEVO: Variables para controlar la visibilidad del botón en pantalla completa
   bool _showControls = true;
   Timer? _hideTimer;
 
@@ -263,17 +266,32 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     _player = Player();
     _videoController = VideoController(_player);
     _loadChannels();
+    _searchController.addListener(_filterChannels);
   }
 
   @override
   void dispose() {
     WakelockPlus.disable();
     _player.dispose();
-    _hideTimer?.cancel(); // Cancelamos el timer al cerrar la pantalla
+    _hideTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
-  // NUEVO: Función para mostrar controles e iniciar el temporizador de ocultado
+  void _filterChannels() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredChannels = _channels;
+      } else {
+        _filteredChannels = _channels.where((channel) {
+          final name = (channel['name'] ?? '').toLowerCase();
+          return name.contains(query);
+        }).toList();
+      }
+    });
+  }
+
   void _toggleControlsVisibility() {
     setState(() {
       _showControls = !_showControls;
@@ -286,7 +304,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     }
   }
 
-  // NUEVO: Temporizador que oculta los controles tras 3 segundos de inactividad
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
@@ -311,6 +328,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
         final List<dynamic> decodedData = json.decode(cachedChannels);
         setState(() {
           _channels = decodedData;
+          _filteredChannels = decodedData;
           _isLoadingChannels = false;
           if (_channels.isNotEmpty) {
             _selectChannel(_channels[0]);
@@ -337,6 +355,7 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
 
           setState(() {
             _channels = data;
+            _filteredChannels = data;
             _isLoadingChannels = false;
             if (_channels.isNotEmpty) {
               _selectChannel(_channels[0]);
@@ -376,16 +395,14 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     );
   }
 
-  // Modificada: Al entrar en pantalla completa, forzamos que se muestren los controles inicialmente
   void _enterFullScreen() {
     setState(() {
       _isFullScreen = true;
-      _showControls = true; // Forzamos mostrar al entrar
+      _showControls = true;
     });
-    _startHideTimer(); // Iniciamos el timer para ocultarlo
+    _startHideTimer();
   }
 
-  // Modificada: Al salir, cancelamos el timer
   void _exitFullScreen() {
     setState(() {
       _isFullScreen = false;
@@ -400,30 +417,51 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_isFullScreen) {
-          _exitFullScreen(); // Usamos la función modificada
+          _exitFullScreen();
         }
       },
       child: Scaffold(
         appBar: _isFullScreen
             ? null
             : AppBar(
-                title: Text(_selectedChannel != null ? 'Reproduciendo: ${_selectedChannel['name']}' : 'Micanal IPTV - Canales'),
+                title: Text(
+                  _selectedChannel != null ? 'Reproduciendo: ${_selectedChannel['name']}' : 'Micanal IPTV - Canales',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
                 actions: [
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
+                  // Botón Actualizar con texto e ícono separado
+                  TextButton.icon(
                     onPressed: () => _loadChannels(forceRefresh: true),
-                    tooltip: 'Actualizar lista de canales',
+                    icon: const Icon(Icons.refresh, size: 18, color: Colors.white70),
+                    label: const Text(
+                      'Actualizar',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w300),
+                    ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.fullscreen),
-                    onPressed: _enterFullScreen, // Usamos la función modificada
-                    tooltip: 'Pantalla completa',
+                  const SizedBox(width: 8),
+
+                  // Botón Pantalla Completa con texto e ícono separado
+                  TextButton.icon(
+                    onPressed: _enterFullScreen,
+                    icon: const Icon(Icons.fullscreen, size: 20, color: Colors.white70),
+                    label: const Text(
+                      'Pantalla completa',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w300),
+                    ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.logout),
+                  const SizedBox(width: 8),
+
+                  // Botón Cerrar Sesión con texto e ícono separado
+                  TextButton.icon(
                     onPressed: _logout,
-                    tooltip: 'Cerrar sesión',
+                    icon: const Icon(Icons.logout, size: 18, color: Colors.redAccent),
+                    label: const Text(
+                      'Cerrar Sesión',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w300),
+                    ),
                   ),
+                  const SizedBox(width: 12),
                 ],
               ),
         body: _isLoadingChannels
@@ -441,31 +479,94 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                                 decoration: const BoxDecoration(
                                   border: Border(right: BorderSide(color: Colors.white12)),
                                 ),
-                                child: ListView.builder(
-                                  itemCount: _channels.length,
-                                  itemBuilder: (context, index) {
-                                    final channel = _channels[index];
-                                    final isSelected = _selectedChannel != null && _selectedChannel['stream_id'] == channel['stream_id'];
-                                    return ListTile(
-                                      selected: isSelected,
-                                      selectedTileColor: const Color(0xFF007ACC).withOpacity(0.3),
-                                      leading: channel['stream_icon'] != null && channel['stream_icon'].toString().isNotEmpty
-                                          ? Image.network(
-                                              channel['stream_icon'],
-                                              width: 40,
-                                              height: 40,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.tv, size: 40),
-                                            )
-                                          : const Icon(Icons.tv, size: 40),
-                                      title: Text(
-                                        channel['name'] ?? 'Canal sin nombre',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                child: Column(
+                                  children: [
+                                    // Barra de Búsqueda Integrada
+                                    Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: TextField(
+                                        controller: _searchController,
+                                        decoration: InputDecoration(
+                                          hintText: 'Buscar canal...',
+                                          prefixIcon: const Icon(Icons.search, size: 20),
+                                          suffixIcon: _searchController.text.isNotEmpty
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.clear, size: 18),
+                                                  onPressed: () {
+                                                    _searchController.clear();
+                                                  },
+                                                )
+                                              : null,
+                                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                                          border: OutlineInputBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                            borderSide: const BorderSide(color: Colors.white24),
+                                          ),
+                                          filled: true,
+                                          fillColor: Colors.black26,
+                                        ),
                                       ),
-                                      onTap: () => _selectChannel(channel),
-                                    );
-                                  },
+                                    ),
+                                    // Lista filtrada de canales
+                                    Expanded(
+                                      child: ListView.builder(
+                                        itemCount: _filteredChannels.length,
+                                        itemBuilder: (context, index) {
+                                          final channel = _filteredChannels[index];
+                                          final isSelected = _selectedChannel != null && _selectedChannel['stream_id'] == channel['stream_id'];
+                                          final iconUrl = channel['stream_icon'];
+
+                                          return ListTile(
+                                            selected: isSelected,
+                                            selectedTileColor: const Color(0xFF007ACC).withOpacity(0.3),
+                                            leading: ClipRRect(
+                                              borderRadius: BorderRadius.circular(6),
+                                              child: (iconUrl != null && iconUrl.toString().isNotEmpty)
+                                                  ? Image.network(
+                                                      iconUrl,
+                                                      width: 40,
+                                                      height: 40,
+                                                      fit: BoxFit.contain,
+                                                      loadingBuilder: (context, child, progress) {
+                                                        if (progress == null) return child;
+                                                        return const SizedBox(
+                                                          width: 40,
+                                                          height: 40,
+                                                          child: Center(
+                                                            child: SizedBox(
+                                                              width: 14,
+                                                              height: 14,
+                                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                      errorBuilder: (context, error, stackTrace) => Container(
+                                                        width: 40,
+                                                        height: 40,
+                                                        color: Colors.grey[900],
+                                                        child: const Icon(Icons.tv, size: 22, color: Colors.white54),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      width: 40,
+                                                      height: 40,
+                                                      color: Colors.grey[900],
+                                                      child: const Icon(Icons.tv, size: 22, color: Colors.white54),
+                                                    ),
+                                            ),
+                                            title: Text(
+                                              channel['name'] ?? 'Canal sin nombre',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                            onTap: () => _selectChannel(channel),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -475,29 +576,27 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                               color: Colors.black,
                               child: Video(
                                 controller: _videoController,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain,
                               ),
                             ),
                           ),
                         ],
                       ),
                       
-                      // NUEVO: Capa transparente para detectar toques en modo pantalla completa
                       if (_isFullScreen)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: _toggleControlsVisibility, // Muestra/oculta controles al tocar
+                          onTap: _toggleControlsVisibility,
                           child: const SizedBox.expand(),
                         ),
 
-                      // Botón flotante modificado con visibilidad controlada
-                      if (_isFullScreen && _showControls) // Solo se muestra si ambos son verdaderos
+                      if (_isFullScreen && _showControls)
                         Positioned(
                           top: 24,
                           right: 24,
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black54, // Más sutil
+                              backgroundColor: Colors.black54,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               elevation: 4,
@@ -506,10 +605,10 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                                 side: const BorderSide(color: Colors.white12),
                               ),
                             ),
-                            onPressed: _exitFullScreen, // Usamos la función modificada
-                            icon: const Icon(Icons.arrow_back, color: Colors.white), // Cambiado a flecha de volver
+                            onPressed: _exitFullScreen,
+                            icon: const Icon(Icons.arrow_back, color: Colors.white),
                             label: const Text(
-                              'Volver a Canales', // Texto más descriptivo
+                              'Volver a Canales',
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
