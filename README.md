@@ -1,17 +1,38 @@
-# wgnet_iptv
+# 📺 Micanal IPTV (WGNet)
 
-A new Flutter project.
+**Micanal IPTV** es una aplicación moderna, liviana y optimizada para la reproducción de televisión en vivo mediante el protocolo Xtream Codes API. Desarrollada en **Flutter** y orientada al rendimiento fluido en dispositivos Android.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🚀 Características Principales
 
-A few resources to get you started if this is your first Flutter project:
+- 🔐 **Autenticación Persistente:** Inicio de sesión automático y guardado seguro de credenciales con `shared_preferences`.
+- ⚡ **Inicio Ultrarrápido:** Almacenamiento en caché local de la lista de canales para una carga casi instantánea al abrir la app.
+- 🎬 **Reproducción de Alto Rendimiento:** Integración con `media_kit` para un streaming estable y de baja latencia en streams HLS/m3u8.
+- 📱 **UX/UI Optimizada:**
+  - Modo pantalla completa con controles flotantes inteligentes que se ocultan automáticamente tras 3 segundos de inactividad.
+  - Navegación segura con `PopScope` que evita el cierre accidental de la aplicación al usar el botón de retroceso físico de Android.
+  - Orientación fija en modo horizontal (*Landscape*) para una experiencia nativa de televisión.
+- 💡 **Prevención de Suspensión:** Mantiene la pantalla encendida automáticamente durante la reproducción mediante `wakelock_plus`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛠️ Tecnologías y Librerías Utilizadas
+
+- **Framework:** [Flutter](https://flutter.dev/) (Dart)
+- **Motor de Video:** `media_kit` & `media_kit_video`
+- **Persistencia de Datos:** `shared_preferences`
+- **Gestión de Pantalla:** `wakelock_plus` & `flutter/services`
+- **Protocolo de Streaming:** Xtream Codes Player API (`http`)
+
+---
+
+## 📦 Estructura del Proyecto
+
+```text
+wgnet_iptv/
+├── android/               # Configuración nativa y manifiesto de Android
+├── assets/                # Logos e imágenes del proyecto
+├── lib/
+│   └── main.dart          # Lógica principal, Splash, Login y Reproductor
+└── pubspec.yaml           # Configuración y dependencias del proyecto
