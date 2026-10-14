@@ -295,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.remove('saved_username');
     await prefs.remove('saved_password');
     await prefs.remove('cached_channels');
+    await prefs.remove('cached_movies');
 
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -308,6 +309,19 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ChannelsScreen(
+          baseUrl: widget.baseUrl,
+          username: widget.username,
+          password: widget.password,
+        ),
+      ),
+    );
+  }
+
+  void _openMovies() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MoviesScreen(
           baseUrl: widget.baseUrl,
           username: widget.username,
           password: widget.password,
@@ -458,7 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Colors.purple.withOpacity(0.3),
                                       Colors.deepPurple.withOpacity(0.1),
                                     ],
-                                    onTap: () => _showFeatureNotice('Películas'),
+                                    onTap: _openMovies,
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -749,7 +763,462 @@ class _DashboardActionButtonState extends State<_DashboardActionButton> {
 }
 
 // -----------------------------------------------------------------------------
-// PANTALLA DE CANALES Y REPRODUCTOR
+// PANTALLA DE PELÍCULAS (VOD)
+// -----------------------------------------------------------------------------
+class MoviesScreen extends StatefulWidget {
+  final String baseUrl;
+  final String username;
+  final String password;
+
+  const MoviesScreen({
+    super.key,
+    required this.baseUrl,
+    required this.username,
+    required this.password,
+  });
+
+  @override
+  State<MoviesScreen> createState() => _MoviesScreenState();
+}
+
+class _MoviesScreenState extends State<MoviesScreen> {
+  List<dynamic> _movies = [];
+  List<dynamic> _filteredMovies = [];
+  bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMovies();
+    _searchController.addListener(_filterMovies);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterMovies() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredMovies = _movies;
+      } else {
+        _filteredMovies = _movies.where((movie) {
+          final name = (movie['name'] ?? '').toLowerCase();
+          return name.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  Future<void> _loadMovies({bool forceRefresh = false}) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString('cached_movies');
+
+    if (!forceRefresh && cached != null && cached.isNotEmpty) {
+      try {
+        final List<dynamic> decoded = json.decode(cached);
+        setState(() {
+          _movies = decoded;
+          _filteredMovies = decoded;
+          _isLoading = false;
+        });
+        return;
+      } catch (e) {
+        // Ignorar error de caché
+      }
+    }
+
+    await _fetchMoviesFromNetwork();
+  }
+
+  Future<void> _fetchMoviesFromNetwork() async {
+    final url = '${widget.baseUrl}/player_api.php?username=${widget.username}&password=${widget.password}&action=get_vod_streams';
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('cached_movies', json.encode(data));
+
+          setState(() {
+            _movies = data;
+            _filteredMovies = data;
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _playMovie(dynamic movie) {
+    final streamId = movie['stream_id'];
+    final containerExtension = movie['container_extension'] ?? 'mp4';
+    final movieUrl = '${widget.baseUrl}/movie/${widget.username}/${widget.password}/$streamId.$containerExtension';
+    final movieName = movie['name'] ?? 'Película';
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MoviePlayerScreen(
+          movieUrl: movieUrl,
+          movieName: movieName,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Películas - Catálogo VOD', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Actualizar Catálogo',
+            onPressed: () => _loadMovies(forceRefresh: true),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Barra de búsqueda superior
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar película por título...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () => _searchController.clear(),
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Colors.white24),
+                ),
+                filled: true,
+                fillColor: Colors.black45,
+              ),
+            ),
+          ),
+          
+          // Contenido principal (Grid de Pósters)
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF007ACC)))
+                : _filteredMovies.isEmpty
+                    ? const Center(child: Text('No hay películas disponibles en el servidor.'))
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 5, // 5 columnas de pósters para TV Box / Paisaje
+                          childAspectRatio: 0.65, // Proporción de póster de cine
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                        itemCount: _filteredMovies.length,
+                        itemBuilder: (context, index) {
+                          final movie = _filteredMovies[index];
+                          return _MoviePosterTile(
+                            movie: movie,
+                            autofocus: index == 0,
+                            onTap: () => _playMovie(movie),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Tarjeta Individual de Póster con Enfoque D-Pad
+class _MoviePosterTile extends StatefulWidget {
+  final dynamic movie;
+  final bool autofocus;
+  final VoidCallback onTap;
+
+  const _MoviePosterTile({
+    required this.movie,
+    required this.autofocus,
+    required this.onTap,
+  });
+
+  @override
+  State<_MoviePosterTile> createState() => _MoviePosterTileState();
+}
+
+class _MoviePosterTileState extends State<_MoviePosterTile> {
+  late final FocusNode _focusNode;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _focusNode.hasFocus;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final posterUrl = widget.movie['stream_icon'];
+    final title = widget.movie['name'] ?? 'Sin título';
+    final rating = widget.movie['rating']?.toString();
+
+    return InkWell(
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _hasFocus ? Colors.white : Colors.transparent,
+            width: 3,
+          ),
+          boxShadow: _hasFocus
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF007ACC).withOpacity(0.8),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  )
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  )
+                ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Imagen del Póster
+              (posterUrl != null && posterUrl.toString().isNotEmpty)
+                  ? Image.network(
+                      posterUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: Colors.grey[900],
+                        child: const Icon(Icons.movie, size: 40, color: Colors.white54),
+                      ),
+                    )
+                  : Container(
+                      color: Colors.grey[900],
+                      child: const Icon(Icons.movie, size: 40, color: Colors.white54),
+                    ),
+
+              // Degradado inferior para legibilidad del título
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: _hasFocus ? 13 : 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Indicador de calificación superior si existe
+              if (rating != null && rating.isNotEmpty && rating != '0' && rating != 'null')
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.amber, width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, size: 12, color: Colors.amber),
+                        const SizedBox(width: 3),
+                        Text(rating, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// REPRODUCTOR DE PELÍCULAS (VOD PLAYER)
+// -----------------------------------------------------------------------------
+class MoviePlayerScreen extends StatefulWidget {
+  final String movieUrl;
+  final String movieName;
+
+  const MoviePlayerScreen({
+    super.key,
+    required this.movieUrl,
+    required this.movieName,
+  });
+
+  @override
+  State<MoviePlayerScreen> createState() => _MoviePlayerScreenState();
+}
+
+class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
+  late final Player _player;
+  late final VideoController _videoController;
+  bool _showControls = true;
+  Timer? _hideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WakelockPlus.enable();
+    _player = Player();
+    _videoController = VideoController(_player);
+    _player.open(Media(widget.movieUrl));
+    _startHideTimer();
+  }
+
+  @override
+  void dispose() {
+    WakelockPlus.disable();
+    _player.dispose();
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startHideTimer() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  void _toggleControls() {
+    setState(() {
+      _showControls = !_showControls;
+    });
+    if (_showControls) {
+      _startHideTimer();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _toggleControls,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Video(
+                controller: _videoController,
+                fit: BoxFit.contain,
+              ),
+            ),
+            if (_showControls)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black26,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      AppBar(
+                        backgroundColor: Colors.black54,
+                        title: Text(widget.movieName, style: const TextStyle(fontSize: 16)),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.all(20.0),
+                        child: Text(
+                          'Presiona Atrás para salir',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// PANTALLA DE CANALES Y REPRODUCTOR (EN VIVO)
 // -----------------------------------------------------------------------------
 class ChannelsScreen extends StatefulWidget {
   final String baseUrl;
@@ -964,7 +1433,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                 ? const Center(child: Text('No se encontraron canales'))
                 : Stack(
                     children: [
-                      // 1. REPRODUCTOR AL FONDO
                       Positioned.fill(
                         child: Container(
                           color: Colors.black,
@@ -974,8 +1442,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                           ),
                         ),
                       ),
-
-                      // 2. LISTA DE CANALES FLOTANTE Y NAVEGABLE CON D-PAD
                       if (!_isFullScreen)
                         Positioned(
                           top: 0,
@@ -989,7 +1455,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                             ),
                             child: Column(
                               children: [
-                                // Barra de Búsqueda
                                 Padding(
                                   padding: const EdgeInsets.all(8.0),
                                   child: TextField(
@@ -1015,7 +1480,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                                     ),
                                   ),
                                 ),
-                                // Lista filtrada con enfoque de D-Pad
                                 Expanded(
                                   child: ListView.builder(
                                     itemCount: _filteredChannels.length,
@@ -1037,16 +1501,12 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                             ),
                           ),
                         ),
-                      
-                      // 3. CAPA DE GESTOS EN PANTALLA COMPLETA
                       if (_isFullScreen)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: _toggleControlsVisibility,
                           child: const SizedBox.expand(),
                         ),
-
-                      // 4. BOTÓN VOLVER EN PANTALLA COMPLETA
                       if (_isFullScreen && _showControls)
                         Positioned(
                           top: 24,
@@ -1067,7 +1527,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
   }
 }
 
-// Widget individual para los canales con soporte D-Pad
 class _ChannelTileDpad extends StatefulWidget {
   final dynamic channel;
   final bool isSelected;
@@ -1155,20 +1614,6 @@ class _ChannelTileDpadState extends State<_ChannelTileDpad> {
                     width: 40,
                     height: 40,
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: Center(
-                          child: SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      );
-                    },
                     errorBuilder: (context, error, stackTrace) => Container(
                       width: 40,
                       height: 40,
@@ -1202,7 +1647,6 @@ class _ChannelTileDpadState extends State<_ChannelTileDpad> {
   }
 }
 
-// Widget de Botón Optimizado para Control Remoto / D-Pad
 class _DpadButton extends StatefulWidget {
   final VoidCallback onPressed;
   final IconData icon;
@@ -1212,6 +1656,7 @@ class _DpadButton extends StatefulWidget {
   final bool isBig;
 
   const _DpadButton({
+    super.key,
     required this.onPressed,
     required this.icon,
     required this.label,

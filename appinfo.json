@@ -1,0 +1,12 @@
+{
+  "id": "com.micanal.iptv",
+  "version": "1.0.0",
+  "vendor": "Micanal",
+  "type": "web",
+  "main": "index.html",
+  "title": "Micanal IPTV",
+  "icon": "assets/icon.png",
+  "requiredPermissions": [
+    "INTERNET"
+  ]
+}
