@@ -27,22 +27,36 @@ class WgnetIptvApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Micanal IPTV',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF007ACC),
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    return Shortcuts(
+      shortcuts: <LogicalKeySet, Intent>{
+        LogicalKeySet(LogicalKeyboardKey.select): const ActivateIntent(),
+        LogicalKeySet(LogicalKeyboardKey.enter): const ActivateIntent(),
+        LogicalKeySet(LogicalKeyboardKey.space): const ActivateIntent(),
+        LogicalKeySet(LogicalKeyboardKey.gameButtonA): const ActivateIntent(),
+      },
+      child: MaterialApp(
+        title: 'Micanal IPTV',
+        theme: ThemeData(
           brightness: Brightness.dark,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF007ACC),
+            brightness: Brightness.dark,
+          ),
+          scaffoldBackgroundColor: const Color(0xFF0A0A0A),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF121212),
+            elevation: 0,
+          ),
+          focusColor: const Color(0xFF007ACC).withOpacity(0.5),
         ),
-        scaffoldBackgroundColor: const Color(0xFF0A0A0A),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF121212),
-          elevation: 0,
-        ),
+        home: const SplashScreen(),
+        debugShowCheckedModeBanner: false,
       ),
-      home: const SplashScreen(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -201,6 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: _userController,
+                  autofocus: true,
                   decoration: const InputDecoration(labelText: 'Usuario', border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 14),
@@ -412,6 +427,11 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
   
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
     return PopScope(
       canPop: !_isFullScreen,
       onPopInvokedWithResult: (didPop, result) {
@@ -430,36 +450,25 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 actions: [
-                  // Botón Actualizar con texto e ícono separado
-                  TextButton.icon(
+                  _DpadButton(
                     onPressed: () => _loadChannels(forceRefresh: true),
-                    icon: const Icon(Icons.refresh, size: 18, color: Colors.white70),
-                    label: const Text(
-                      'Actualizar',
-                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w300),
-                    ),
+                    icon: Icons.refresh,
+                    label: 'Actualizar',
+                    textColor: Colors.white70,
                   ),
                   const SizedBox(width: 8),
-
-                  // Botón Pantalla Completa con texto e ícono separado
-                  TextButton.icon(
+                  _DpadButton(
                     onPressed: _enterFullScreen,
-                    icon: const Icon(Icons.fullscreen, size: 20, color: Colors.white70),
-                    label: const Text(
-                      'Pantalla completa',
-                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w300),
-                    ),
+                    icon: Icons.fullscreen,
+                    label: 'Pantalla completa',
+                    textColor: Colors.white70,
                   ),
                   const SizedBox(width: 8),
-
-                  // Botón Cerrar Sesión con texto e ícono separado
-                  TextButton.icon(
+                  _DpadButton(
                     onPressed: _logout,
-                    icon: const Icon(Icons.logout, size: 18, color: Colors.redAccent),
-                    label: const Text(
-                      'Cerrar Sesión',
-                      style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.w300),
-                    ),
+                    icon: Icons.logout,
+                    label: 'Cerrar Sesión',
+                    textColor: Colors.redAccent,
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -470,119 +479,81 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                 ? const Center(child: Text('No se encontraron canales'))
                 : Stack(
                     children: [
-                      Row(
-                        children: [
-                          if (!_isFullScreen)
-                            Expanded(
-                              flex: 4,
-                              child: Container(
-                                decoration: const BoxDecoration(
-                                  border: Border(right: BorderSide(color: Colors.white12)),
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Barra de Búsqueda Integrada
-                                    Padding(
-                                      padding: const EdgeInsets.all(8.0),
-                                      child: TextField(
-                                        controller: _searchController,
-                                        decoration: InputDecoration(
-                                          hintText: 'Buscar canal...',
-                                          prefixIcon: const Icon(Icons.search, size: 20),
-                                          suffixIcon: _searchController.text.isNotEmpty
-                                              ? IconButton(
-                                                  icon: const Icon(Icons.clear, size: 18),
-                                                  onPressed: () {
-                                                    _searchController.clear();
-                                                  },
-                                                )
-                                              : null,
-                                          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(8),
-                                            borderSide: const BorderSide(color: Colors.white24),
-                                          ),
-                                          filled: true,
-                                          fillColor: Colors.black26,
-                                        ),
-                                      ),
-                                    ),
-                                    // Lista filtrada de canales
-                                    Expanded(
-                                      child: ListView.builder(
-                                        itemCount: _filteredChannels.length,
-                                        itemBuilder: (context, index) {
-                                          final channel = _filteredChannels[index];
-                                          final isSelected = _selectedChannel != null && _selectedChannel['stream_id'] == channel['stream_id'];
-                                          final iconUrl = channel['stream_icon'];
+                      // 1. REPRODUCTOR AL FONDO
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black,
+                          child: Video(
+                            controller: _videoController,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
 
-                                          return ListTile(
-                                            selected: isSelected,
-                                            selectedTileColor: const Color(0xFF007ACC).withOpacity(0.3),
-                                            leading: ClipRRect(
-                                              borderRadius: BorderRadius.circular(6),
-                                              child: (iconUrl != null && iconUrl.toString().isNotEmpty)
-                                                  ? Image.network(
-                                                      iconUrl,
-                                                      width: 40,
-                                                      height: 40,
-                                                      fit: BoxFit.contain,
-                                                      loadingBuilder: (context, child, progress) {
-                                                        if (progress == null) return child;
-                                                        return const SizedBox(
-                                                          width: 40,
-                                                          height: 40,
-                                                          child: Center(
-                                                            child: SizedBox(
-                                                              width: 14,
-                                                              height: 14,
-                                                              child: CircularProgressIndicator(strokeWidth: 2),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                      errorBuilder: (context, error, stackTrace) => Container(
-                                                        width: 40,
-                                                        height: 40,
-                                                        color: Colors.grey[900],
-                                                        child: const Icon(Icons.tv, size: 22, color: Colors.white54),
-                                                      ),
-                                                    )
-                                                  : Container(
-                                                      width: 40,
-                                                      height: 40,
-                                                      color: Colors.grey[900],
-                                                      child: const Icon(Icons.tv, size: 22, color: Colors.white54),
-                                                    ),
-                                            ),
-                                            title: Text(
-                                              channel['name'] ?? 'Canal sin nombre',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(fontWeight: FontWeight.bold),
-                                            ),
-                                            onTap: () => _selectChannel(channel),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                      // 2. LISTA DE CANALES FLOTANTE Y NAVEGABLE CON D-PAD
+                      if (!_isFullScreen)
+                        Positioned(
+                          top: 0,
+                          bottom: 0,
+                          left: 0,
+                          width: MediaQuery.of(context).size.width * 0.38,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.45),
+                              border: const Border(right: BorderSide(color: Colors.white12)),
                             ),
-                          Expanded(
-                            flex: 6,
-                            child: Container(
-                              color: Colors.black,
-                              child: Video(
-                                controller: _videoController,
-                                fit: BoxFit.contain,
-                              ),
+                            child: Column(
+                              children: [
+                                // Barra de Búsqueda
+                                Padding(
+                                  padding: const EdgeInsets.all(8.0),
+                                  child: TextField(
+                                    controller: _searchController,
+                                    decoration: InputDecoration(
+                                      hintText: 'Buscar canal...',
+                                      prefixIcon: const Icon(Icons.search, size: 20),
+                                      suffixIcon: _searchController.text.isNotEmpty
+                                          ? IconButton(
+                                              icon: const Icon(Icons.clear, size: 18),
+                                              onPressed: () {
+                                                _searchController.clear();
+                                              },
+                                            )
+                                          : null,
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: const BorderSide(color: Colors.white24),
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.black38,
+                                    ),
+                                  ),
+                                ),
+                                // Lista filtrada con enfoque de D-Pad
+                                Expanded(
+                                  child: ListView.builder(
+                                    itemCount: _filteredChannels.length,
+                                    itemBuilder: (context, index) {
+                                      final channel = _filteredChannels[index];
+                                      final isSelected = _selectedChannel != null && _selectedChannel['stream_id'] == channel['stream_id'];
+
+                                      return _ChannelTileDpad(
+                                        key: ValueKey(channel['stream_id']),
+                                        channel: channel,
+                                        isSelected: isSelected,
+                                        isFirst: index == 0,
+                                        onTap: () => _selectChannel(channel),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                        ),
                       
+                      // 3. CAPA DE GESTOS EN PANTALLA COMPLETA
                       if (_isFullScreen)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -590,31 +561,260 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                           child: const SizedBox.expand(),
                         ),
 
+                      // 4. BOTÓN VOLVER EN PANTALLA COMPLETA
                       if (_isFullScreen && _showControls)
                         Positioned(
                           top: 24,
                           right: 24,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.black54,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              elevation: 4,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: const BorderSide(color: Colors.white12),
-                              ),
-                            ),
+                          child: _DpadButton(
                             onPressed: _exitFullScreen,
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            label: const Text(
-                              'Volver a Canales',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                            ),
+                            icon: Icons.arrow_back,
+                            label: 'Volver a Canales',
+                            textColor: Colors.white,
+                            backgroundColor: Colors.black87,
+                            isBig: true,
                           ),
                         ),
                     ],
                   ),
+      ),
+    );
+  }
+}
+
+// Widget individual para los canales con soporte D-Pad
+class _ChannelTileDpad extends StatefulWidget {
+  final dynamic channel;
+  final bool isSelected;
+  final bool isFirst;
+  final VoidCallback onTap;
+
+  const _ChannelTileDpad({
+    super.key,
+    required this.channel,
+    required this.isSelected,
+    required this.isFirst,
+    required this.onTap,
+  });
+
+  @override
+  State<_ChannelTileDpad> createState() => _ChannelTileDpadState();
+}
+
+class _ChannelTileDpadState extends State<_ChannelTileDpad> {
+  late final FocusNode _focusNode;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _focusNode.hasFocus;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iconUrl = widget.channel['stream_icon'];
+
+    return InkWell(
+      focusNode: _focusNode,
+      autofocus: widget.isFirst,
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+        decoration: BoxDecoration(
+          color: _hasFocus
+              ? const Color(0xFF007ACC).withOpacity(0.85)
+              : widget.isSelected
+                  ? const Color(0xFF007ACC).withOpacity(0.4)
+                  : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _hasFocus ? Colors.white : Colors.transparent,
+            width: 2,
+          ),
+          boxShadow: _hasFocus
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF007ACC).withOpacity(0.6),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  )
+                ]
+              : [],
+        ),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: (iconUrl != null && iconUrl.toString().isNotEmpty)
+                ? Image.network(
+                    iconUrl,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Center(
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 40,
+                      height: 40,
+                      color: Colors.black38,
+                      child: const Icon(Icons.tv, size: 22, color: Colors.white54),
+                    ),
+                  )
+                : Container(
+                    width: 40,
+                    height: 40,
+                    color: Colors.black38,
+                    child: const Icon(Icons.tv, size: 22, color: Colors.white54),
+                  ),
+          ),
+          title: Text(
+            widget.channel['name'] ?? 'Canal sin nombre',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: _hasFocus ? 15 : 14,
+              color: Colors.white,
+            ),
+          ),
+          trailing: _hasFocus
+              ? const Icon(Icons.play_arrow, color: Colors.white, size: 20)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+// Widget de Botón Optimizado para Control Remoto / D-Pad
+class _DpadButton extends StatefulWidget {
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String label;
+  final Color textColor;
+  final Color? backgroundColor;
+  final bool isBig;
+
+  const _DpadButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+    required this.textColor,
+    this.backgroundColor,
+    this.isBig = false,
+  });
+
+  @override
+  State<_DpadButton> createState() => _DpadButtonState();
+}
+
+class _DpadButtonState extends State<_DpadButton> {
+  late final FocusNode _focusNode;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _focusNode.hasFocus;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      focusNode: _focusNode,
+      onTap: widget.onPressed,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: _hasFocus
+              ? const Color(0xFF007ACC)
+              : (widget.backgroundColor ?? Colors.transparent),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _hasFocus ? Colors.white : Colors.transparent,
+            width: 2,
+          ),
+          boxShadow: _hasFocus
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF007ACC).withOpacity(0.8),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  )
+                ]
+              : [],
+        ),
+        padding: EdgeInsets.symmetric(
+          horizontal: widget.isBig ? 16 : 10,
+          vertical: widget.isBig ? 12 : 8,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              widget.icon,
+              size: widget.isBig ? 20 : 18,
+              color: _hasFocus ? Colors.white : widget.textColor,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              widget.label,
+              style: TextStyle(
+                color: _hasFocus ? Colors.white : widget.textColor,
+                fontSize: widget.isBig ? 14 : 13,
+                fontWeight: _hasFocus ? FontWeight.bold : FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
