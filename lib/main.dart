@@ -90,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => ChannelsScreen(
+          builder: (context) => HomeScreen(
             baseUrl: _fixedBaseUrl,
             username: username,
             password: password,
@@ -153,7 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => ChannelsScreen(baseUrl: _fixedBaseUrl, username: username, password: password),
+              builder: (context) => HomeScreen(baseUrl: _fixedBaseUrl, username: username, password: password),
             ),
           );
         } else {
@@ -249,6 +249,508 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
+// -----------------------------------------------------------------------------
+// PANTALLA PRINCIPAL (DASHBOARD)
+// -----------------------------------------------------------------------------
+class HomeScreen extends StatefulWidget {
+  final String baseUrl;
+  final String username;
+  final String password;
+
+  const HomeScreen({
+    super.key,
+    required this.baseUrl,
+    required this.username,
+    required this.password,
+  });
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Timer _clockTimer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _now = DateTime.now();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer.cancel();
+    super.dispose();
+  }
+
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('saved_username');
+    await prefs.remove('saved_password');
+    await prefs.remove('cached_channels');
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+    );
+  }
+
+  void _openLiveChannels() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChannelsScreen(
+          baseUrl: widget.baseUrl,
+          username: widget.username,
+          password: widget.password,
+        ),
+      ),
+    );
+  }
+
+  void _showFeatureNotice(String featureName) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$featureName estará disponible próximamente.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  String _formatTwoDigits(int n) => n.toString().padLeft(2, '0');
+
+  String _getMonthName(int month) {
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    return months[month - 1];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final timeString = '${_formatTwoDigits(_now.hour)}:${_formatTwoDigits(_now.minute)}';
+    final dateString = '${_now.day} ${_getMonthName(_now.month)} ${_now.year}';
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF08080A),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Column(
+            children: [
+              // 1. ENCABEZADO SUPERIOR
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Logo
+                  Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/logo.jpg',
+                          width: 42,
+                          height: 42,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.tv, size: 36, color: Color(0xFF007ACC)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Micanal IPTV',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+
+                  // Cápsula de Info (Usuario / Servidor)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.verified_user, size: 16, color: Color(0xFF007ACC)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Usuario: ${widget.username}',
+                          style: const TextStyle(fontSize: 13, color: Colors.white70),
+                        ),
+                        const SizedBox(width: 12),
+                        const Text('•', style: TextStyle(color: Colors.white38)),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.check_circle_outline, size: 16, color: Colors.greenAccent),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Estado: Activo',
+                          style: TextStyle(fontSize: 13, color: Colors.greenAccent),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Reloj
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        timeString,
+                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      Text(
+                        dateString,
+                        style: const TextStyle(fontSize: 12, color: Colors.white54),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // 2. CUERPO DE TARJETAS PRINCIPALES
+              Expanded(
+                child: Row(
+                  children: [
+                    // Tarjeta Principal "En Vivo"
+                    Expanded(
+                      flex: 4,
+                      child: _DashboardCard(
+                        autofocus: true,
+                        title: 'En vivo',
+                        subtitle: 'Canales en transmisión directa',
+                        icon: Icons.tv,
+                        accentColor: const Color(0xFF007ACC),
+                        gradientColors: [
+                          const Color(0xFF007ACC).withOpacity(0.35),
+                          const Color(0xFF004080).withOpacity(0.15),
+                        ],
+                        onTap: _openLiveChannels,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    // Sub-grilla para Películas y Series
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _DashboardCard(
+                                    title: 'Películas',
+                                    subtitle: 'Catálogo de cine bajo demanda',
+                                    icon: Icons.movie_outlined,
+                                    accentColor: Colors.purpleAccent,
+                                    gradientColors: [
+                                      Colors.purple.withOpacity(0.3),
+                                      Colors.deepPurple.withOpacity(0.1),
+                                    ],
+                                    onTap: () => _showFeatureNotice('Películas'),
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: _DashboardCard(
+                                    title: 'Series',
+                                    subtitle: 'Temporadas y episodios',
+                                    icon: Icons.video_library_outlined,
+                                    accentColor: Colors.cyanAccent,
+                                    gradientColors: [
+                                      Colors.cyan.withOpacity(0.25),
+                                      Colors.teal.withOpacity(0.1),
+                                    ],
+                                    onTap: () => _showFeatureNotice('Series'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // 3. BARRA INFERIOR DE ACCIONES
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _DashboardActionButton(
+                    icon: Icons.settings,
+                    label: 'Configuración',
+                    onTap: () => _showFeatureNotice('Configuración'),
+                  ),
+                  const SizedBox(width: 12),
+                  _DashboardActionButton(
+                    icon: Icons.switch_account,
+                    label: 'Cambiar de usuario',
+                    onTap: _logout,
+                  ),
+                  const SizedBox(width: 12),
+                  _DashboardActionButton(
+                    icon: Icons.refresh,
+                    label: 'Recargar',
+                    onTap: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Actualizando datos del servidor...')),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  _DashboardActionButton(
+                    icon: Icons.exit_to_app,
+                    label: 'SALIR',
+                    textColor: Colors.redAccent,
+                    onTap: () => SystemNavigator.pop(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Widget de Tarjeta Principal con Enfoque D-Pad
+class _DashboardCard extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color accentColor;
+  final List<Color> gradientColors;
+  final VoidCallback onTap;
+  final bool autofocus;
+
+  const _DashboardCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.accentColor,
+    required this.gradientColors,
+    required this.onTap,
+    this.autofocus = false,
+  });
+
+  @override
+  State<_DashboardCard> createState() => _DashboardCardState();
+}
+
+class _DashboardCardState extends State<_DashboardCard> {
+  late final FocusNode _focusNode;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _focusNode.hasFocus;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: widget.gradientColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(
+            color: _hasFocus ? Colors.white : Colors.white12,
+            width: _hasFocus ? 2.5 : 1.0,
+          ),
+          boxShadow: _hasFocus
+              ? [
+                  BoxShadow(
+                    color: widget.accentColor.withOpacity(0.6),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  )
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  )
+                ],
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _hasFocus
+                    ? widget.accentColor
+                    : widget.accentColor.withOpacity(0.2),
+              ),
+              child: Icon(
+                widget.icon,
+                size: 48,
+                color: _hasFocus ? Colors.white : widget.accentColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.title,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: _hasFocus
+                    ? [Shadow(color: widget.accentColor, blurRadius: 10)]
+                    : [],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              widget.subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: Colors.white60),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Widget de Botón Inferior con Enfoque D-Pad
+class _DashboardActionButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color textColor;
+
+  const _DashboardActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.textColor = Colors.white70,
+  });
+
+  @override
+  State<_DashboardActionButton> createState() => _DashboardActionButtonState();
+}
+
+class _DashboardActionButtonState extends State<_DashboardActionButton> {
+  late final FocusNode _focusNode;
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _hasFocus = _focusNode.hasFocus;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      focusNode: _focusNode,
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: _hasFocus
+              ? const Color(0xFF007ACC)
+              : Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _hasFocus ? Colors.white : Colors.white12,
+            width: _hasFocus ? 2 : 1,
+          ),
+          boxShadow: _hasFocus
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF007ACC).withOpacity(0.6),
+                    blurRadius: 10,
+                  )
+                ]
+              : [],
+        ),
+        child: Row(
+          children: [
+            Icon(widget.icon, size: 18, color: _hasFocus ? Colors.white : widget.textColor),
+            const SizedBox(width: 8),
+            Text(
+              widget.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: _hasFocus ? FontWeight.bold : FontWeight.w500,
+                color: _hasFocus ? Colors.white : widget.textColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// PANTALLA DE CANALES Y REPRODUCTOR
+// -----------------------------------------------------------------------------
 class ChannelsScreen extends StatefulWidget {
   final String baseUrl;
   final String username;
@@ -396,20 +898,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     _player.open(Media(streamUrl));
   }
 
-  Future<void> _logout() async {
-    await _player.stop();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('saved_username');
-    await prefs.remove('saved_password');
-    await prefs.remove('cached_channels');
-
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-    );
-  }
-
   void _enterFullScreen() {
     setState(() {
       _isFullScreen = true;
@@ -444,6 +932,10 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
         appBar: _isFullScreen
             ? null
             : AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                ),
                 title: Text(
                   _selectedChannel != null ? 'Reproduciendo: ${_selectedChannel['name']}' : 'Micanal IPTV - Canales',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -462,13 +954,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                     icon: Icons.fullscreen,
                     label: 'Pantalla completa',
                     textColor: Colors.white70,
-                  ),
-                  const SizedBox(width: 8),
-                  _DpadButton(
-                    onPressed: _logout,
-                    icon: Icons.logout,
-                    label: 'Cerrar Sesión',
-                    textColor: Colors.redAccent,
                   ),
                   const SizedBox(width: 12),
                 ],
