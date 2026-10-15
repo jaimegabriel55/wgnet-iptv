@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -123,12 +124,75 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final String _fixedBaseUrl = 'http://160.238.185.88:25461';
-  
+  final String _fixedBaseUrl = kIsWeb 
+      ? 'https://iachat.ianetworkpy.com:8014' 
+      : 'http://160.238.185.88:25461';
+
   final _userController = TextEditingController();
   final _passController = TextEditingController();
+
+  final FocusNode _userFocusNode = FocusNode();
+  final FocusNode _passFocusNode = FocusNode();
+  final FocusNode _buttonFocusNode = FocusNode();
+
   bool _isLoading = false;
   String _errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Interceptar la flecha abajo o Enter en la cruceta del control remoto
+    _userFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.select ||
+            event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+          _passFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+
+    _passFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          _buttonFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          _userFocusNode.requestFocus();
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.select ||
+            event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+          _buttonFocusNode.requestFocus();
+          _login();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    };
+
+    _buttonFocusNode.onKeyEvent = (node, event) {
+      if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _passFocusNode.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+  }
+
+  @override
+  void dispose() {
+    _userController.dispose();
+    _passController.dispose();
+    _userFocusNode.dispose();
+    _passFocusNode.dispose();
+    _buttonFocusNode.dispose();
+    super.dispose();
+  }
 
   Future<void> _login() async {
     setState(() {
@@ -171,9 +235,11 @@ class _LoginScreenState extends State<LoginScreen> {
         _errorMessage = 'No se pudo conectar al servidor.';
       });
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -182,65 +248,105 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
-          child: Container(
-            width: 420,
-            padding: const EdgeInsets.all(24.0),
-            decoration: BoxDecoration(
-              color: const Color(0xFF161616),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/logo.jpg',
-                      width: 70,
-                      height: 70,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.tv, size: 50, color: Color(0xFF007ACC)),
+          child: FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: Container(
+              width: 420,
+              padding: const EdgeInsets.all(24.0),
+              decoration: BoxDecoration(
+                color: const Color(0xFF161616),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        'assets/logo.jpg',
+                        width: 70,
+                        height: 70,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.tv, size: 50, color: Color(0xFF007ACC)),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Micanal IPTV',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _userController,
-                  autofocus: true,
-                  decoration: const InputDecoration(labelText: 'Usuario', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _passController,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Contraseña', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 20),
-                if (_errorMessage.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Text(_errorMessage, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Micanal IPTV',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF007ACC),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  const SizedBox(height: 20),
+
+                  // CAMPO USUARIO
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(1),
+                    child: TextField(
+                      controller: _userController,
+                      focusNode: _userFocusNode,
+                      autofocus: true,
+                      textInputAction: TextInputAction.next,
+                      onSubmitted: (_) => _passFocusNode.requestFocus(),
+                      decoration: const InputDecoration(
+                        labelText: 'Usuario',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
                   ),
-                  child: _isLoading 
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Ingresar', style: TextStyle(fontSize: 16)),
-                ),
-              ],
+                  const SizedBox(height: 14),
+
+                  // CAMPO CONTRASEÑA
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(2),
+                    child: TextField(
+                      controller: _passController,
+                      focusNode: _passFocusNode,
+                      obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) {
+                        _buttonFocusNode.requestFocus();
+                        _login();
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Contraseña',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  if (_errorMessage.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Text(_errorMessage, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                    ),
+
+                  // BOTÓN INGRESAR
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(3),
+                    child: ElevatedButton(
+                      focusNode: _buttonFocusNode,
+                      onPressed: _isLoading ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF007ACC),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Ingresar', style: TextStyle(fontSize: 16, color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -248,7 +354,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
 // -----------------------------------------------------------------------------
 // PANTALLA PRINCIPAL (DASHBOARD)
 // -----------------------------------------------------------------------------
