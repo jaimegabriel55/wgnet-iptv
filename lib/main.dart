@@ -1323,14 +1323,19 @@ class _MoviePlayerScreenState extends State<MoviePlayerScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// PANTALLA DE CANALES Y REPRODUCTOR (EN VIVO)
+// PANTALLA DE CANALES Y REPRODUCTOR (MODO ZAPTING PROFESIONAL & FIX DEFINITIVO)
 // -----------------------------------------------------------------------------
 class ChannelsScreen extends StatefulWidget {
   final String baseUrl;
   final String username;
   final String password;
 
-  const ChannelsScreen({super.key, required this.baseUrl, required this.username, required this.password});
+  const ChannelsScreen({
+    super.key,
+    required this.baseUrl,
+    required this.username,
+    required this.password,
+  });
 
   @override
   State<ChannelsScreen> createState() => _ChannelsScreenState();
@@ -1340,33 +1345,68 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
   List<dynamic> _channels = [];
   List<dynamic> _filteredChannels = [];
   bool _isLoadingChannels = true;
-  dynamic _selectedChannel;
+  int _currentIndex = 0;
+  
+  // Control de estados de la interfaz
+  bool _isMenuVisible = false; 
+  bool _showZappingBanner = false; 
+  Timer? _zappingBannerTimer;
+  Timer? _inactivityTimer;
+
+  // Control numérico
+  String _numericInputBuffer = '';
+  Timer? _numericInputTimer;
+
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _screenFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
 
   late final Player _player;
   late final VideoController _videoController;
-  bool _isFullScreen = false;
-
-  bool _showControls = true;
-  Timer? _hideTimer;
 
   @override
   void initState() {
     super.initState();
     WakelockPlus.enable();
-    _player = Player();
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        vo: 'gpu',
+        bufferSize: 8 * 1024 * 1024,
+      ),
+    );
     _videoController = VideoController(_player);
     _loadChannels();
     _searchController.addListener(_filterChannels);
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _screenFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
     WakelockPlus.disable();
     _player.dispose();
-    _hideTimer?.cancel();
+    _zappingBannerTimer?.cancel();
+    _numericInputTimer?.cancel();
+    _inactivityTimer?.cancel();
     _searchController.dispose();
+    _screenFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    if (_isMenuVisible) {
+      _inactivityTimer = Timer(const Duration(seconds: 10), () {
+        if (mounted && _isMenuVisible) {
+          setState(() {
+            _isMenuVisible = false;
+          });
+        }
+      });
+    }
   }
 
   void _filterChannels() {
@@ -1379,29 +1419,6 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
           final name = (channel['name'] ?? '').toLowerCase();
           return name.contains(query);
         }).toList();
-      }
-    });
-  }
-
-  void _toggleControlsVisibility() {
-    setState(() {
-      _showControls = !_showControls;
-    });
-
-    if (_showControls) {
-      _startHideTimer();
-    } else {
-      _hideTimer?.cancel();
-    }
-  }
-
-  void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _isFullScreen) {
-        setState(() {
-          _showControls = false;
-        });
       }
     });
   }
@@ -1422,7 +1439,8 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
           _filteredChannels = decodedData;
           _isLoadingChannels = false;
           if (_channels.isNotEmpty) {
-            _selectChannel(_channels[0]);
+            _currentIndex = 0;
+            _playCurrentChannel();
           }
         });
         return;
@@ -1449,7 +1467,8 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
             _filteredChannels = data;
             _isLoadingChannels = false;
             if (_channels.isNotEmpty) {
-              _selectChannel(_channels[0]);
+              _currentIndex = 0;
+              _playCurrentChannel();
             }
           });
         }
@@ -1461,32 +1480,159 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
     }
   }
 
-  void _selectChannel(dynamic channel) async {
-    setState(() {
-      _selectedChannel = channel;
-    });
-    await _player.stop();
-    
+  void _playCurrentChannel() async {
+    if (_channels.isEmpty) return;
+    final channel = _channels[_currentIndex];
     final streamId = channel['stream_id'];
     final streamUrl = '${widget.baseUrl}/live/${widget.username}/${widget.password}/$streamId.m3u8';
+    
+    await _player.stop();
     _player.open(Media(streamUrl));
+    
+    setState(() {
+      _showZappingBanner = true;
+    });
+
+    _zappingBannerTimer?.cancel();
+    _zappingBannerTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showZappingBanner = false;
+        });
+      }
+    });
   }
 
-  void _enterFullScreen() {
+  void _changeChannel(int direction) {
+    if (_channels.isEmpty) return;
     setState(() {
-      _isFullScreen = true;
-      _showControls = true;
+      _currentIndex = (_currentIndex + direction) % _channels.length;
+      if (_currentIndex < 0) _currentIndex = _channels.length - 1;
     });
-    _startHideTimer();
+    _playCurrentChannel();
   }
 
-  void _exitFullScreen() {
+  void _handleNumberInput(String digit) {
     setState(() {
-      _isFullScreen = false;
+      _numericInputBuffer += digit;
+      _showZappingBanner = true;
     });
-    _hideTimer?.cancel();
+
+    _numericInputTimer?.cancel();
+    _numericInputTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (_numericInputBuffer.isNotEmpty) {
+        final channelNum = int.tryParse(_numericInputBuffer);
+        if (channelNum != null && channelNum > 0 && channelNum <= _channels.length) {
+          setState(() {
+            _currentIndex = channelNum - 1;
+            _numericInputBuffer = '';
+          });
+          _playCurrentChannel();
+        } else {
+          setState(() {
+            _numericInputBuffer = '';
+            _showZappingBanner = false;
+          });
+        }
+      }
+    });
   }
-  
+
+  void _scrollToCurrentChannel() {
+    if (_scrollController.hasClients) {
+      final targetOffset = _currentIndex * 56.0;
+      _scrollController.animateTo(
+        targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
+  KeyEventResult _handleKeyEvents(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      // ----------------------------------------------------
+      // SI EL MENÚ LATERAL ESTÁ ABIERTO: Las flechas mueven la selección en la lista
+      // ----------------------------------------------------
+      if (_isMenuVisible) {
+        _resetInactivityTimer();
+        if (event.logicalKey == LogicalKeyboardKey.escape ||
+            event.logicalKey == LogicalKeyboardKey.goBack) {
+          setState(() {
+            _isMenuVisible = false;
+            _inactivityTimer?.cancel();
+          });
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() {
+            _currentIndex = (_currentIndex - 1) % _filteredChannels.length;
+            if (_currentIndex < 0) _currentIndex = _filteredChannels.length - 1;
+          });
+          _scrollToCurrentChannel();
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() {
+            _currentIndex = (_currentIndex + 1) % _filteredChannels.length;
+          });
+          _scrollToCurrentChannel();
+          return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.select ||
+                   event.logicalKey == LogicalKeyboardKey.enter ||
+                   event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+          // Al presionar OK sobre el canal seleccionado en la lista, lo reproducimos
+          setState(() {
+            _isMenuVisible = false;
+          });
+          _inactivityTimer?.cancel();
+          _playCurrentChannel();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      }
+
+      // ----------------------------------------------------
+      // SI ESTÁ EN PANTALLA COMPLETA (Menú oculto): Zapping directo y números
+      // ----------------------------------------------------
+      String? digit;
+      if (event.logicalKey == LogicalKeyboardKey.digit0 || event.logicalKey == LogicalKeyboardKey.numpad0) digit = '0';
+      else if (event.logicalKey == LogicalKeyboardKey.digit1 || event.logicalKey == LogicalKeyboardKey.numpad1) digit = '1';
+      else if (event.logicalKey == LogicalKeyboardKey.digit2 || event.logicalKey == LogicalKeyboardKey.numpad2) digit = '2';
+      else if (event.logicalKey == LogicalKeyboardKey.digit3 || event.logicalKey == LogicalKeyboardKey.numpad3) digit = '3';
+      else if (event.logicalKey == LogicalKeyboardKey.digit4 || event.logicalKey == LogicalKeyboardKey.numpad4) digit = '4';
+      else if (event.logicalKey == LogicalKeyboardKey.digit5 || event.logicalKey == LogicalKeyboardKey.numpad5) digit = '5';
+      else if (event.logicalKey == LogicalKeyboardKey.digit6 || event.logicalKey == LogicalKeyboardKey.numpad6) digit = '6';
+      else if (event.logicalKey == LogicalKeyboardKey.digit7 || event.logicalKey == LogicalKeyboardKey.numpad7) digit = '7';
+      else if (event.logicalKey == LogicalKeyboardKey.digit8 || event.logicalKey == LogicalKeyboardKey.numpad8) digit = '8';
+      else if (event.logicalKey == LogicalKeyboardKey.digit9 || event.logicalKey == LogicalKeyboardKey.numpad9) digit = '9';
+
+      if (digit != null) {
+        _handleNumberInput(digit);
+        return KeyEventResult.handled;
+      }
+
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _changeChannel(-1);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _changeChannel(1);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.select ||
+                 event.logicalKey == LogicalKeyboardKey.enter ||
+                 event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+        setState(() {
+          _isMenuVisible = true;
+        });
+        _resetInactivityTimer();
+        Future.delayed(const Duration(milliseconds: 100), _scrollToCurrentChannel);
+        return KeyEventResult.handled;
+      } else if (event.logicalKey == LogicalKeyboardKey.escape ||
+                 event.logicalKey == LogicalKeyboardKey.goBack) {
+        Navigator.pop(context);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
   @override
   Widget build(BuildContext context) {
     SystemChrome.setPreferredOrientations([
@@ -1494,65 +1640,81 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
       DeviceOrientation.landscapeRight,
     ]);
 
-    return PopScope(
-      canPop: !_isFullScreen,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        if (_isFullScreen) {
-          _exitFullScreen();
-        }
-      },
+    final currentChannelData = _channels.isNotEmpty ? _channels[_currentIndex] : null;
+    final channelNumber = _currentIndex + 1;
+    final channelName = currentChannelData != null ? (currentChannelData['name'] ?? 'Canal') : '';
+
+    return Focus(
+      focusNode: _screenFocusNode,
+      onKeyEvent: _handleKeyEvents,
       child: Scaffold(
-        appBar: _isFullScreen
-            ? null
-            : AppBar(
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                title: Text(
-                  _selectedChannel != null ? 'Reproduciendo: ${_selectedChannel['name']}' : 'Micanal IPTV - Canales',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                actions: [
-                  _DpadButton(
-                    onPressed: () => _loadChannels(forceRefresh: true),
-                    icon: Icons.refresh,
-                    label: 'Actualizar',
-                    textColor: Colors.white70,
-                  ),
-                  const SizedBox(width: 8),
-                  _DpadButton(
-                    onPressed: _enterFullScreen,
-                    icon: Icons.fullscreen,
-                    label: 'Pantalla completa',
-                    textColor: Colors.white70,
-                  ),
-                  const SizedBox(width: 12),
-                ],
-              ),
+        backgroundColor: Colors.black,
         body: _isLoadingChannels
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator(color: Color(0xFF007ACC)))
             : _channels.isEmpty
-                ? const Center(child: Text('No se encontraron canales'))
+                ? const Center(child: Text('No se encontraron canales', style: TextStyle(color: Colors.white)))
                 : Stack(
                     children: [
                       Positioned.fill(
-                        child: Container(
-                          color: Colors.black,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            setState(() {
+                              _isMenuVisible = !_isMenuVisible;
+                            });
+                            if (_isMenuVisible) {
+                              _resetInactivityTimer();
+                              Future.delayed(const Duration(milliseconds: 100), _scrollToCurrentChannel);
+                            } else {
+                              _inactivityTimer?.cancel();
+                            }
+                          },
                           child: Video(
                             controller: _videoController,
                             fit: BoxFit.contain,
                           ),
                         ),
                       ),
-                      if (!_isFullScreen)
+                      if (_showZappingBanner && !_isMenuVisible)
+                        Positioned(
+                          top: 24,
+                          left: 24,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.black87,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF007ACC), width: 1.5),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF007ACC),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _numericInputBuffer.isNotEmpty ? 'CH: $_numericInputBuffer' : 'CH $channelNumber',
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _numericInputBuffer.isNotEmpty ? 'Buscando número...' : channelName,
+                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (_isMenuVisible)
                         Positioned(
                           top: 0,
                           bottom: 0,
                           left: 0,
-                          width: MediaQuery.of(context).size.width * 0.38,
+                          width: MediaQuery.of(context).size.width * 0.4,
                           child: Container(
                             decoration: BoxDecoration(
                               color: Colors.black.withOpacity(0.45),
@@ -1561,43 +1723,89 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                             child: Column(
                               children: [
                                 Padding(
-                                  padding: const EdgeInsets.all(8.0),
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Lista de Canales',
+                                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close, color: Colors.white70),
+                                        onPressed: () {
+                                          setState(() => _isMenuVisible = false);
+                                          _inactivityTimer?.cancel();
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4),
                                   child: TextField(
                                     controller: _searchController,
                                     decoration: InputDecoration(
                                       hintText: 'Buscar canal...',
-                                      prefixIcon: const Icon(Icons.search, size: 20),
-                                      suffixIcon: _searchController.text.isNotEmpty
-                                          ? IconButton(
-                                              icon: const Icon(Icons.clear, size: 18),
-                                              onPressed: () {
-                                                _searchController.clear();
-                                              },
-                                            )
-                                          : null,
+                                      prefixIcon: const Icon(Icons.search, size: 18),
                                       contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: const BorderSide(color: Colors.white24),
-                                      ),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                       filled: true,
-                                      fillColor: Colors.black38,
+                                      fillColor: Colors.black45,
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 8),
                                 Expanded(
                                   child: ListView.builder(
+                                    controller: _scrollController,
                                     itemCount: _filteredChannels.length,
                                     itemBuilder: (context, index) {
                                       final channel = _filteredChannels[index];
-                                      final isSelected = _selectedChannel != null && _selectedChannel['stream_id'] == channel['stream_id'];
+                                      final realIndex = _channels.indexOf(channel);
+                                      final isSelected = realIndex == _currentIndex;
 
-                                      return _ChannelTileDpad(
-                                        key: ValueKey(channel['stream_id']),
-                                        channel: channel,
-                                        isSelected: isSelected,
-                                        isFirst: index == 0,
-                                        onTap: () => _selectChannel(channel),
+                                      return Container(
+                                        color: isSelected ? const Color(0xFF007ACC).withOpacity(0.6) : Colors.transparent,
+                                        child: ListTile(
+                                          selected: isSelected,
+                                          title: Row(
+                                            children: [
+                                              Container(
+                                                width: 40,
+                                                alignment: Alignment.centerLeft,
+                                                child: Text(
+                                                  '${realIndex + 1}',
+                                                  style: TextStyle(
+                                                    color: isSelected ? Colors.white : Colors.white54,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                              Expanded(
+                                                child: Text(
+                                                  channel['name'] ?? 'Canal',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: isSelected ? Colors.white : Colors.white70,
+                                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          onTap: () {
+                                            setState(() {
+                                              _currentIndex = realIndex;
+                                              _isMenuVisible = false;
+                                            });
+                                            _inactivityTimer?.cancel();
+                                            _playCurrentChannel();
+                                          },
+                                        ),
                                       );
                                     },
                                   ),
@@ -1606,250 +1814,8 @@ class _ChannelsScreenState extends State<ChannelsScreen> {
                             ),
                           ),
                         ),
-                      if (_isFullScreen)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleControlsVisibility,
-                          child: const SizedBox.expand(),
-                        ),
-                      if (_isFullScreen && _showControls)
-                        Positioned(
-                          top: 24,
-                          right: 24,
-                          child: _DpadButton(
-                            onPressed: _exitFullScreen,
-                            icon: Icons.arrow_back,
-                            label: 'Volver a Canales',
-                            textColor: Colors.white,
-                            backgroundColor: Colors.black87,
-                            isBig: true,
-                          ),
-                        ),
                     ],
                   ),
-      ),
-    );
-  }
-}
-
-class _ChannelTileDpad extends StatefulWidget {
-  final dynamic channel;
-  final bool isSelected;
-  final bool isFirst;
-  final VoidCallback onTap;
-
-  const _ChannelTileDpad({
-    super.key,
-    required this.channel,
-    required this.isSelected,
-    required this.isFirst,
-    required this.onTap,
-  });
-
-  @override
-  State<_ChannelTileDpad> createState() => _ChannelTileDpadState();
-}
-
-class _ChannelTileDpadState extends State<_ChannelTileDpad> {
-  late final FocusNode _focusNode;
-  bool _hasFocus = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = FocusNode();
-    _focusNode.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (mounted) {
-      setState(() {
-        _hasFocus = _focusNode.hasFocus;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChange);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final iconUrl = widget.channel['stream_icon'];
-
-    return InkWell(
-      focusNode: _focusNode,
-      autofocus: widget.isFirst,
-      onTap: widget.onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-        decoration: BoxDecoration(
-          color: _hasFocus
-              ? const Color(0xFF007ACC).withOpacity(0.85)
-              : widget.isSelected
-                  ? const Color(0xFF007ACC).withOpacity(0.4)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _hasFocus ? Colors.white : Colors.transparent,
-            width: 2,
-          ),
-          boxShadow: _hasFocus
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF007ACC).withOpacity(0.6),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  )
-                ]
-              : [],
-        ),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: (iconUrl != null && iconUrl.toString().isNotEmpty)
-                ? Image.network(
-                    iconUrl,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 40,
-                      height: 40,
-                      color: Colors.black38,
-                      child: const Icon(Icons.tv, size: 22, color: Colors.white54),
-                    ),
-                  )
-                : Container(
-                    width: 40,
-                    height: 40,
-                    color: Colors.black38,
-                    child: const Icon(Icons.tv, size: 22, color: Colors.white54),
-                  ),
-          ),
-          title: Text(
-            widget.channel['name'] ?? 'Canal sin nombre',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: _hasFocus ? 15 : 14,
-              color: Colors.white,
-            ),
-          ),
-          trailing: _hasFocus
-              ? const Icon(Icons.play_arrow, color: Colors.white, size: 20)
-              : null,
-        ),
-      ),
-    );
-  }
-}
-
-class _DpadButton extends StatefulWidget {
-  final VoidCallback onPressed;
-  final IconData icon;
-  final String label;
-  final Color textColor;
-  final Color? backgroundColor;
-  final bool isBig;
-
-  const _DpadButton({
-    super.key,
-    required this.onPressed,
-    required this.icon,
-    required this.label,
-    required this.textColor,
-    this.backgroundColor,
-    this.isBig = false,
-  });
-
-  @override
-  State<_DpadButton> createState() => _DpadButtonState();
-}
-
-class _DpadButtonState extends State<_DpadButton> {
-  late final FocusNode _focusNode;
-  bool _hasFocus = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = FocusNode();
-    _focusNode.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (mounted) {
-      setState(() {
-        _hasFocus = _focusNode.hasFocus;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _focusNode.removeListener(_onFocusChange);
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      focusNode: _focusNode,
-      onTap: widget.onPressed,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          color: _hasFocus
-              ? const Color(0xFF007ACC)
-              : (widget.backgroundColor ?? Colors.transparent),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _hasFocus ? Colors.white : Colors.transparent,
-            width: 2,
-          ),
-          boxShadow: _hasFocus
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF007ACC).withOpacity(0.8),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  )
-                ]
-              : [],
-        ),
-        padding: EdgeInsets.symmetric(
-          horizontal: widget.isBig ? 16 : 10,
-          vertical: widget.isBig ? 12 : 8,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              widget.icon,
-              size: widget.isBig ? 20 : 18,
-              color: _hasFocus ? Colors.white : widget.textColor,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              widget.label,
-              style: TextStyle(
-                color: _hasFocus ? Colors.white : widget.textColor,
-                fontSize: widget.isBig ? 14 : 13,
-                fontWeight: _hasFocus ? FontWeight.bold : FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
